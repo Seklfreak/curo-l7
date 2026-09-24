@@ -1,5 +1,5 @@
 // Command curo-l7 downloads the stored results from a CURO L7 lipid meter over
-// its USB cable.
+// its USB cable, and can import them into lab-tracker (`curo-l7 import`).
 //
 // The meter only talks right after it is switched on: start the tool, then
 // turn the meter on with the cable plugged in.
@@ -20,14 +20,25 @@ import (
 )
 
 func main() {
+	log.SetFlags(0)
+	if len(os.Args) > 1 && os.Args[1] == "import" {
+		if err := runImport(os.Args[2:]); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
+
 	var (
 		format      = flag.String("format", "table", "output format: table, csv or json")
 		wait        = flag.Duration("wait", 5*time.Minute, "how long to wait for the meter to be switched on")
 		clockOffset = flag.Duration("clock-offset", 12*time.Hour, "added to the meter's timestamps (this meter's clock runs 12h behind)")
 		verbose     = flag.Bool("v", false, "log the exchanged frames")
 	)
+	flag.Usage = func() {
+		fmt.Fprintln(flag.CommandLine.Output(), "Usage: curo-l7 [flags]           print the meter's results\n       curo-l7 import [flags]    import them into lab-tracker (see curo-l7 import -h)")
+		flag.PrintDefaults()
+	}
 	flag.Parse()
-	log.SetFlags(0)
 	if *format != "table" && *format != "csv" && *format != "json" {
 		log.Fatalf("unknown -format %q", *format)
 	}

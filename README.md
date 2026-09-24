@@ -31,6 +31,30 @@ with a correct clock. CSV and JSON keep the meter's own timestamp as well.
 LDL (Friedewald), non-HDL and the TC/HDL ratio are calculated; the meter only
 stores total cholesterol, triglycerides and HDL.
 
+## Import into lab-tracker
+
+`curo-l7 import` sends readings to
+[lab-tracker](https://github.com/Seklfreak/lab-tracker). It skips readings
+lab-tracker already has, asks which profile each new reading belongs to
+(Enter repeats the previous choice, `s` skips, `q` quits), and uploads total
+cholesterol, triglycerides and HDL. Calculated values are not sent.
+
+Create a token on lab-tracker's **Tokens** page, then either export it:
+
+```
+export LAB_TRACKER_URL=https://lab-tracker.example.com
+export LAB_TRACKER_TOKEN=lt_…
+./curo-l7 import
+```
+
+or put `{"url": "…", "token": "lt_…"}` in `~/.config/curo-l7/config.json`
+(`chmod 600` it). `-in readings.json` imports a file saved with
+`-format json` instead of reading the meter.
+
+Each reading is identified by its raw record bytes (`curo-l7:<hex>`), so
+re-running the import never creates duplicates, even after changing
+`-clock-offset`.
+
 ## Protocol
 
 It's the SD CodeFree protocol documented by
