@@ -88,26 +88,30 @@ func download(p *serialPort, wait time.Duration, verbose bool) ([]Record, error)
 
 	log.Printf("Switch the meter on now (waiting up to %s)...", wait)
 	deadline := time.Now().Add(wait)
+	var count int
 	for {
 		msg, err := recv(time.Until(deadline))
 		if err != nil {
 			return nil, fmt.Errorf("waiting for greeting: %w", err)
 		}
-		if bytes.Equal(msg, msgGreeting) {
-			break
+		if !bytes.Equal(msg, msgGreeting) {
+			continue
 		}
-	}
-	// The meter gives up within seconds, so answer immediately.
-	if err := send(msgAck); err != nil {
-		return nil, err
-	}
-	msg, err := recv(5 * time.Second)
-	if err != nil {
-		return nil, fmt.Errorf("waiting for record count: %w", err)
-	}
-	count, err := parseCount(msg)
-	if err != nil {
-		return nil, err
+		// The meter gives up within seconds, so answer immediately.
+		if err := send(msgAck); err != nil {
+			return nil, err
+		}
+		msg, err = recv(5 * time.Second)
+		if err != nil {
+			// Usually a greeting we saw too late. The meter goes quiet until
+			// it's power-cycled, so wait for the next greeting.
+			log.Printf("The meter didn't answer. Switch it off and on again...")
+			continue
+		}
+		if count, err = parseCount(msg); err != nil {
+			return nil, err
+		}
+		break
 	}
 	log.Printf("Meter holds %d record(s).", count)
 

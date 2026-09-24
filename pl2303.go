@@ -55,6 +55,9 @@ func openPort(baud uint32) (*serialPort, error) {
 	if err == nil {
 		err = p.configure(baud)
 	}
+	if err == nil {
+		p.drain()
+	}
 	if err != nil {
 		p.Close()
 		return nil, err
@@ -75,6 +78,21 @@ func (p *serialPort) configure(baud uint32) error {
 		return fmt.Errorf("set control lines: %w", err)
 	}
 	return nil
+}
+
+// drain discards bytes the adapter buffered before we started listening, e.g.
+// a greeting from a meter switched on earlier. Answering that stale greeting
+// would be too late: the meter only waits a few seconds.
+func (p *serialPort) drain() {
+	chunk := make([]byte, 64)
+	for i := 0; i < 50; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		n, err := p.in.ReadContext(ctx, chunk)
+		cancel()
+		if n == 0 || err != nil {
+			return
+		}
+	}
 }
 
 func (p *serialPort) Write(b []byte) error {
