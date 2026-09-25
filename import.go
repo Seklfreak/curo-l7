@@ -122,8 +122,8 @@ func parseHex(s string) ([]byte, error) {
 	return out, nil
 }
 
-func runImport(args []string) error {
-	fs := flag.NewFlagSet("import", flag.ExitOnError)
+func runImport(args []string, stdin io.Reader, prompts io.Writer) error {
+	fs := flag.NewFlagSet("import", flag.ContinueOnError)
 	var (
 		in          = fs.String("in", "", "import records saved with -format json instead of reading the meter")
 		wait        = fs.Duration("wait", 5*time.Minute, "how long to wait for the meter to be switched on")
@@ -134,7 +134,9 @@ func runImport(args []string) error {
 		fmt.Fprintln(fs.Output(), "Usage: curo-l7 import [flags]\n\nReads the meter (or -in file), skips readings lab-tracker already has, asks\nwhich profile each new reading belongs to, and uploads them.")
 		fs.PrintDefaults()
 	}
-	_ = fs.Parse(args)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
 
 	cfg, err := loadConfig()
 	if err != nil {
@@ -194,7 +196,7 @@ func runImport(args []string) error {
 		names[p.ID] = p.Name
 	}
 	imported, skipped := 0, 0
-	stdin := bufio.NewReader(os.Stdin)
+	answers := bufio.NewReader(stdin)
 	last := -1
 	for _, r := range fresh {
 		reading := toLabTracker(r, "")
@@ -203,7 +205,7 @@ func runImport(args []string) error {
 			skipped++
 			continue
 		}
-		choice, err := askProfile(os.Stderr, stdin, r, profiles, last)
+		choice, err := askProfile(prompts, answers, r, profiles, last)
 		if errors.Is(err, errQuit) {
 			break
 		}

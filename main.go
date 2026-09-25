@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -22,7 +23,10 @@ import (
 func main() {
 	log.SetFlags(0)
 	if len(os.Args) > 1 && os.Args[1] == "import" {
-		if err := runImport(os.Args[2:]); err != nil {
+		if err := runImport(os.Args[2:], os.Stdin, os.Stderr); err != nil {
+			if errors.Is(err, flag.ErrHelp) {
+				return
+			}
 			log.Fatal(err)
 		}
 		return
@@ -70,7 +74,17 @@ func main() {
 	}
 }
 
-func download(p *serialPort, wait time.Duration, verbose bool) ([]Record, error) {
+// meterConn is the framed link to the meter; *serialPort in production, a
+// scripted fake in tests.
+type meterConn interface {
+	Write(frame []byte) error
+	readFrame(timeout time.Duration) ([]byte, error)
+}
+
+// ackTimeout is how long the meter gets to answer our reply to its greeting.
+var ackTimeout = 5 * time.Second
+
+func download(p meterConn, wait time.Duration, verbose bool) ([]Record, error) {
 	send := func(msg []byte) error {
 		f := buildFrame(msg)
 		if verbose {
@@ -89,26 +103,35 @@ func download(p *serialPort, wait time.Duration, verbose bool) ([]Record, error)
 	log.Printf("Switch the meter on now (waiting up to %s)...", wait)
 	deadline := time.Now().Add(wait)
 	var count int
+	var msg []byte // a greeting already received, if any
 	for {
-		msg, err := recv(time.Until(deadline))
-		if err != nil {
-			return nil, fmt.Errorf("waiting for greeting: %w", err)
+		if msg == nil {
+			var err error
+			if msg, err = recv(time.Until(deadline)); err != nil {
+				return nil, fmt.Errorf("waiting for greeting: %w", err)
+			}
 		}
 		if !bytes.Equal(msg, msgGreeting) {
+			msg = nil
 			continue
 		}
 		// The meter gives up within seconds, so answer immediately.
 		if err := send(msgAck); err != nil {
 			return nil, err
 		}
-		msg, err = recv(5 * time.Second)
+		reply, err := recv(ackTimeout)
 		if err != nil {
 			// Usually a greeting we saw too late. The meter goes quiet until
 			// it's power-cycled, so wait for the next greeting.
 			log.Printf("The meter didn't answer. Switch it off and on again...")
+			msg = nil
 			continue
 		}
-		if count, err = parseCount(msg); err != nil {
+		if bytes.Equal(reply, msgGreeting) {
+			msg = reply // power-cycled while we waited: answer the new greeting
+			continue
+		}
+		if count, err = parseCount(reply); err != nil {
 			return nil, err
 		}
 		break
